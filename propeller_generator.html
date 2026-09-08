@@ -1,0 +1,1416 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>מחולל מדחפים פרמטרי - Parametric Propeller Generator</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Three.js and OrbitControls -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Rubik:wght@300;400;500;700&display=swap');
+        body {
+            font-family: 'Rubik', sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+        }
+        /* Custom scrollbar for control panel */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1e293b;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #475569;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #64748b;
+        }
+        /* Hide default number input spinners */
+        input[type=number]::-webkit-inner-spin-button, 
+        input[type=number]::-webkit-outer-spin-button { 
+            -webkit-appearance: none; 
+            margin: 0; 
+        }
+        input[type=number] {
+            -moz-appearance: textfield;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+    <!-- Header -->
+    <header class="bg-slate-900 border-b border-slate-800 px-6 py-4 flex flex-wrap justify-between items-center gap-4">
+        <div class="flex items-center gap-3">
+            <div class="bg-indigo-600 p-2.5 rounded-lg text-white shadow-lg shadow-indigo-500/20">
+                <i class="fa-solid fa-fan fa-spin text-xl"></i>
+            </div>
+            <div>
+                <h1 class="text-xl font-bold tracking-tight text-white">מחולל מדחפים פרמטרי</h1>
+                <p class="text-xs text-slate-400">Parametric Propeller Customizer & Generator for OpenSCAD</p>
+            </div>
+        </div>
+        
+        <div class="flex items-center gap-3">
+            <button onclick="loadPreset('rc_plane')" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-md text-xs font-medium transition duration-150">
+                <i class="fa-solid fa-plane-up ml-1.5"></i>טיסן RC
+            </button>
+            <button onclick="loadPreset('airplane')" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-md text-xs font-medium transition duration-150">
+                <i class="fa-solid fa-plane ml-1.5"></i>מטוס גדול
+            </button>
+            <button onclick="loadPreset('pc_fan')" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-md text-xs font-medium transition duration-150">
+                <i class="fa-solid fa-wind ml-1.5"></i>מאוורר PC
+            </button>
+            <button onclick="loadPreset('toy_boat')" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-md text-xs font-medium transition duration-150">
+                <i class="fa-solid fa-ship ml-1.5"></i>סירת צעצוע
+            </button>
+            <button onclick="loadPreset('pullcopter')" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-md text-xs font-medium transition duration-150">
+                <i class="fa-solid fa-arrows-up-to-line ml-1.5"></i>מסוק משיכה
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <div class="flex-1 flex flex-col lg:flex-row overflow-hidden">
+        
+        <!-- Left Side: Visualizer & Output -->
+        <div class="flex-1 flex flex-col bg-slate-950 p-4 lg:p-6 gap-6 overflow-y-auto">
+            <!-- 3D Canvas Card -->
+            <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden flex flex-col relative min-h-[400px] lg:h-[550px] shadow-2xl">
+                <!-- Toolbar overlay -->
+                <div class="absolute top-4 right-4 z-10 flex gap-2">
+                    <button id="btn-spin" onclick="toggleSpin()" class="bg-slate-800/80 hover:bg-indigo-600 text-white p-2.5 rounded-lg backdrop-blur-sm transition duration-150" title="הפעל/עצור סיבוב">
+                        <i class="fa-solid fa-play w-4 h-4 flex items-center justify-center" id="spin-icon"></i>
+                    </button>
+                    <button onclick="toggleWireframe()" class="bg-slate-800/80 hover:bg-indigo-600 text-white p-2.5 rounded-lg backdrop-blur-sm transition duration-150" title="מצב רשת (Wireframe)">
+                        <i class="fa-solid fa-border-none w-4 h-4 flex items-center justify-center"></i>
+                    </button>
+                    <button onclick="resetCamera()" class="bg-slate-800/80 hover:bg-indigo-600 text-white p-2.5 rounded-lg backdrop-blur-sm transition duration-150" title="איפוס מצלמה">
+                        <i class="fa-solid fa-arrows-to-eye w-4 h-4 flex items-center justify-center"></i>
+                    </button>
+                </div>
+                
+                <div class="absolute top-4 left-4 z-10 text-xs bg-slate-800/80 text-slate-300 px-3 py-1.5 rounded-lg backdrop-blur-sm pointer-events-none flex items-center gap-1.5">
+                    <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                    תצוגת תלת-ממד אינטראקטיבית (Three.js)
+                </div>
+
+                <!-- Canvas container -->
+                <div id="canvas-container" class="flex-1 w-full h-full bg-radial-gradient"></div>
+            </div>
+
+            <!-- OpenSCAD Code & Explanation Tabs -->
+            <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-xl">
+                <div class="border-b border-slate-800 bg-slate-900/50 px-4 py-2 flex justify-between items-center">
+                    <div class="flex gap-2" id="tabs">
+                        <button onclick="switchTab('code-tab')" id="btn-code-tab" class="px-4 py-2 text-sm font-semibold border-b-2 border-indigo-500 text-indigo-400">קוד OpenSCAD מוכן להעתקה</button>
+                        <button onclick="switchTab('info-tab')" id="btn-info-tab" class="px-4 py-2 text-sm font-semibold text-slate-400 hover:text-slate-200">הסבר על הפרמטרים</button>
+                    </div>
+                    <button onclick="copyCode()" class="flex items-center gap-2 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-md transition duration-150">
+                        <i class="fa-regular fa-copy" id="copy-icon"></i>
+                        <span id="copy-text">העתק קוד</span>
+                    </button>
+                </div>
+
+                <!-- Code Content -->
+                <div id="code-tab" class="p-4 overflow-x-auto max-h-[300px]">
+                    <pre class="text-xs text-indigo-200 font-mono select-all leading-relaxed" id="code-block"></pre>
+                </div>
+
+                <!-- Info Content -->
+                <div id="info-tab" class="p-5 hidden leading-relaxed text-sm text-slate-300 space-y-4">
+                    <div>
+                        <h4 class="font-bold text-slate-100 text-base mb-1">📐 גיאומטריית הלהבים (NACA 4-Digit)</h4>
+                        <p>הלהבים נבנים על בסיס פרופיל אווירודינמי מסוג NACA בעל 4 ספרות. הלהב משתנה בהדרגה (morphing) מפרופיל עבה ויציב בבסיס (Root) לפרופיל דק ואווירודינמי בקצה (Tip). זה מאפשר חוזק מכני לצד יעילות אווירודינמית גבוהה.</p>
+                    </div>
+                    <div>
+                        <h4 class="font-bold text-slate-100 text-base mb-1">🌀 פסיעה (Pitch) ופיתול</h4>
+                        <p>הפסיעה מגדירה את המרחק שהמדחף מתקדם קדימה בסיבוב אחד (במ"מ). בגלל שהמהירות הקווית של קצה הלהב גבוהה יותר ממרכזו, זווית התקיפה מחושבת ומפותלת בהתאם באופן אוטומטי (Helical Twist). באפשרותך לקבוע פסיעה קבועה או פסיעה משתנה ליניארית מבסיס הלהב לקצהו.</p>
+                    </div>
+                    <div>
+                        <h4 class="font-bold text-slate-100 text-base mb-1">⚙️ חיבור ציר המנוע (Shaft Connection)</h4>
+                        <p>הקוד תומך במגוון קדחים ישירים לציר המנוע: קדח עגול פשוט, קדח עם שגם (Keyway) עבור מומנט גבוה, קדח בצורת D למניעת החלקה, או קדח משושה (Hex). מידות השגם מחושבות אוטומטית לפי תקני ISO/DIN בהתאם לקוטר הציר.</p>
+                    </div>
+                    <div>
+                        <h4 class="font-bold text-slate-100 text-base mb-1">📌 חורי אבטחה צידיים (Pin Holes)</h4>
+                        <p>הוספת שני חורים סימטריים בטבור המדחף במרחק מוגדר מהמרכז. חורים אלו משמשים לברגי אבטחה או פינים מקבעים (למשל במנועים מסוג T-Motor) כדי למנוע החלקה של המדחף תחת עומס.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Side: Control Panel (Sidebar) -->
+        <div class="w-full lg:w-[450px] bg-slate-900 border-r lg:border-r-0 lg:border-l border-slate-800 flex flex-col overflow-y-auto">
+            <!-- Sidebar Header -->
+            <div class="p-5 border-b border-slate-800 bg-slate-900/60 sticky top-0 z-20 backdrop-blur-md">
+                <h3 class="font-bold text-slate-100 text-lg flex items-center gap-2">
+                    <i class="fa-solid fa-sliders text-indigo-500"></i>
+                    לוח בקרה ופרמטרים
+                </h3>
+                <p class="text-xs text-slate-400">שנה את הפרמטרים מטה והמודל יתעדכן בזמן אמת</p>
+            </div>
+
+            <!-- Parameters Accordions -->
+            <div class="p-5 space-y-6">
+                
+                <!-- Section 1: Propeller Base -->
+                <div class="space-y-4">
+                    <h4 class="text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-800 pb-2">🔩 הגדרות בסיס למדחף</h4>
+                    
+                    <!-- Blades Count -->
+                    <div>
+                        <div class="flex justify-between items-center mb-1.5">
+                            <label class="text-sm font-medium text-slate-200">מספר להבים (Blades)</label>
+                            <span class="text-xs font-semibold text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded" id="val-Blades">3</span>
+                        </div>
+                        <input type="range" id="param-Blades" min="1" max="12" step="1" value="3" oninput="updateParam('Blades', this.value)" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500">
+                    </div>
+
+                    <!-- Diameter -->
+                    <div>
+                        <div class="flex justify-between items-center mb-1.5">
+                            <label class="text-sm font-medium text-slate-200">קוטר חיצוני (Diameter)</label>
+                            <span class="text-xs font-semibold text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded"><span id="val-Diameter">150</span> מ"מ</span>
+                        </div>
+                        <input type="range" id="param-Diameter" min="40" max="400" step="5" value="150" oninput="updateParam('Diameter', this.value)" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500">
+                    </div>
+
+                    <!-- Rotation Direction -->
+                    <div class="flex justify-between items-center gap-4">
+                        <label class="text-sm font-medium text-slate-200">כיוון סיבוב</label>
+                        <select id="param-Direction" onchange="updateParam('Direction', this.value)" class="bg-slate-800 border border-slate-700 text-slate-200 text-sm rounded-md px-3 py-1.5 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
+                            <option value="1">עם כיוון השעון (CW)</option>
+                            <option value="-1" selected>נגד כיוון השעון (CCW)</option>
+                        </select>
+                    </div>
+
+                    <!-- Pitch -->
+                    <div>
+                        <div class="flex justify-between items-center mb-1.5">
+                            <label class="text-sm font-medium text-slate-200">פסיעה בבסיס (Pitch)</label>
+                            <span class="text-xs font-semibold text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded"><span id="val-Pitch">100</span> מ"מ/סיבוב</span>
+                        </div>
+                        <input type="range" id="param-Pitch" min="10" max="400" step="5" value="100" oninput="updateParam('Pitch', this.value)" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500">
+                    </div>
+
+                    <!-- Pitch Tip Override -->
+                    <div>
+                        <div class="flex justify-between items-center mb-1.5">
+                            <label class="text-sm font-medium text-slate-200">פסיעה בקצה הלהב (Pitch Tip)</label>
+                            <span class="text-xs font-semibold text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded" id="lbl-Pitch_Tip"><span id="val-Pitch_Tip">-1</span> (זהה לבסיס)</span>
+                        </div>
+                        <input type="range" id="param-Pitch_Tip" min="-1" max="400" step="1" value="-1" oninput="updateParam('Pitch_Tip', this.value)" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500">
+                    </div>
+                </div>
+
+                <!-- Section 2: Blade Profile Details -->
+                <div class="space-y-4">
+                    <h4 class="text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-800 pb-2">🪶 גיאומטריית הלהב ורוחב</h4>
+                    
+                    <!-- Chord Mode -->
+                    <div class="flex justify-between items-center gap-4">
+                        <label class="text-sm font-medium text-slate-200">שינוי רוחב הלהב לאורכו</label>
+                        <select id="param-Chord_Mode" onchange="updateParam('Chord_Mode', this.value)" class="bg-slate-800 border border-slate-700 text-slate-200 text-sm rounded-md px-3 py-1.5 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
+                            <option value="ellipse" selected>אליפטי (מומלץ ויעיל)</option>
+                            <option value="linear">ליניארי (מצר הדרגתי)</option>
+                            <option value="constant">אחיד (פרופלור פשוט)</option>
+                        </select>
+                    </div>
+
+                    <!-- Chord Fraction -->
+                    <div>
+                        <div class="flex justify-between items-center mb-1.5">
+                            <label class="text-sm font-medium text-slate-200">יחס רוחב מקסימלי (Chord Fraction)</label>
+                            <span class="text-xs font-semibold text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded" id="val-Chord_Fraction">0.15</span>
+                        </div>
+                        <input type="range" id="param-Chord_Fraction" min="0.05" max="0.6" step="0.01" value="0.15" oninput="updateParam('Chord_Fraction', this.value)" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500">
+                    </div>
+
+                    <!-- Ellipse Length -->
+                    <div>
+                        <div class="flex justify-between items-center mb-1.5">
+                            <label class="text-sm font-medium text-slate-200">גורם אורך אליפסה (Taper Factor)</label>
+                            <span class="text-xs font-semibold text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded" id="val-Ellipse_Length">1.1</span>
+                        </div>
+                        <input type="range" id="param-Ellipse_Length" min="1.0" max="2.0" step="0.05" value="1.1" oninput="updateParam('Ellipse_Length', this.value)" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500">
+                    </div>
+
+                    <!-- Centerline -->
+                    <div>
+                        <div class="flex justify-between items-center mb-1.5">
+                            <label class="text-sm font-medium text-slate-200">יישור ציר הלהב (Centerline)</label>
+                            <span class="text-xs font-semibold text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded" id="lbl-Centerline">1.0 (קצה אחורי שטוח)</span>
+                        </div>
+                        <input type="range" id="param-Centerline" min="0" max="1" step="0.1" value="1.0" oninput="updateParam('Centerline', this.value)" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500">
+                    </div>
+
+                    <!-- Sweep -->
+                    <div>
+                        <div class="flex justify-between items-center mb-1.5">
+                            <label class="text-sm font-medium text-slate-200">פסיעה צידית / משיכה לאחור (Sweep)</label>
+                            <span class="text-xs font-semibold text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded"><span id="val-Sweep">0.0</span> מעלות למ"מ</span>
+                        </div>
+                        <input type="range" id="param-Sweep" min="-1.5" max="1.5" step="0.05" value="0.0" oninput="updateParam('Sweep', this.value)" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500">
+                    </div>
+
+                    <!-- Fairing -->
+                    <div>
+                        <div class="flex justify-between items-center mb-1.5">
+                            <label class="text-sm font-medium text-slate-200">עיבוי חיבור להב-טבור (Fairing)</label>
+                            <span class="text-xs font-semibold text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded"><span id="val-Fairing">3</span> מ"מ</span>
+                        </div>
+                        <input type="range" id="param-Fairing" min="0" max="10" step="1" value="3" oninput="updateParam('Fairing', this.value)" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500">
+                    </div>
+                </div>
+
+                <!-- Section 3: NACA Airfoils -->
+                <div class="space-y-4">
+                    <h4 class="text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-800 pb-2">📐 פרופילי כנף (NACA Codes)</h4>
+                    
+                    <div class="grid grid-cols-3 gap-3">
+                        <div>
+                            <label class="block text-xs font-medium text-slate-400 mb-1">פרופיל בסיס</label>
+                            <input type="number" id="param-NACA_Root" value="8430" min="0000" max="9999" onchange="updateParam('NACA_Root', this.value)" class="w-full bg-slate-800 border border-slate-700 text-slate-200 text-sm font-mono text-center rounded px-2 py-1.5 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-slate-400 mb-1">פרופיל מרכז</label>
+                            <input type="number" id="param-NACA_Mid" value="6412" min="0000" max="9999" onchange="updateParam('NACA_Mid', this.value)" class="w-full bg-slate-800 border border-slate-700 text-slate-200 text-sm font-mono text-center rounded px-2 py-1.5 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-slate-400 mb-1">פרופיל קצה</label>
+                            <input type="number" id="param-NACA_Tip" value="3412" min="0000" max="9999" onchange="updateParam('NACA_Tip', this.value)" class="w-full bg-slate-800 border border-slate-700 text-slate-200 text-sm font-mono text-center rounded px-2 py-1.5 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
+                        </div>
+                    </div>
+
+                    <!-- Transition Point -->
+                    <div>
+                        <div class="flex justify-between items-center mb-1.5">
+                            <label class="text-sm font-medium text-slate-200">נקודת מעבר בסיס←מרכז</label>
+                            <span class="text-xs font-semibold text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded" id="val-Transition_Point">0.33</span>
+                        </div>
+                        <input type="range" id="param-Transition_Point" min="0.0" max="1.0" step="0.01" value="0.33" oninput="updateParam('Transition_Point', this.value)" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500">
+                    </div>
+
+                    <!-- Trailing Edge Thickness -->
+                    <div>
+                        <div class="flex justify-between items-center mb-1.5">
+                            <label class="text-sm font-medium text-slate-200">עובי קצה אחורי (לתלת-ממד)</label>
+                            <span class="text-xs font-semibold text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded"><span id="val-Trailing_Thickness">0.4</span> מ"מ</span>
+                        </div>
+                        <input type="range" id="param-Trailing_Thickness" min="0.1" max="1.5" step="0.05" value="0.4" oninput="updateParam('Trailing_Thickness', this.value)" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500">
+                    </div>
+                </div>
+
+                <!-- Section 4: Hub & Shaft -->
+                <div class="space-y-4">
+                    <h4 class="text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-800 pb-2">🔩 טבור (Hub) וקדח ציר מנוע</h4>
+                    
+                    <div class="grid grid-cols-2 gap-4">
+                        <!-- Hub Diameter -->
+                        <div>
+                            <div class="flex justify-between items-center mb-1">
+                                <label class="text-xs font-medium text-slate-300">קוטר הטבור</label>
+                                <span class="text-xs font-bold text-indigo-400"><span id="val-Root_Diameter">14</span> מ"מ</span>
+                            </div>
+                            <input type="range" id="param-Root_Diameter" min="5" max="80" step="1" value="14" oninput="updateParam('Root_Diameter', this.value)" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500">
+                        </div>
+                        <!-- Hub Height -->
+                        <div>
+                            <div class="flex justify-between items-center mb-1">
+                                <label class="text-xs font-medium text-slate-300">גובה הטבור</label>
+                                <span class="text-xs font-bold text-indigo-400"><span id="val-Root_Height">8</span> מ"מ</span>
+                            </div>
+                            <input type="range" id="param-Root_Height" min="4" max="80" step="1" value="8" oninput="updateParam('Root_Height', this.value)" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500">
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4">
+                        <!-- Hub Extend -->
+                        <div>
+                            <div class="flex justify-between items-center mb-1">
+                                <label class="text-xs font-medium text-slate-300">הארכת טבור</label>
+                                <span class="text-xs font-bold text-indigo-400"><span id="val-Hub_Extend">2</span> מ"מ</span>
+                            </div>
+                            <input type="range" id="param-Hub_Extend" min="0" max="30" step="1" value="2" oninput="updateParam('Hub_Extend', this.value)" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500">
+                        </div>
+                        <!-- Shaft Diameter -->
+                        <div>
+                            <div class="flex justify-between items-center mb-1">
+                                <label class="text-xs font-medium text-slate-300">קוטר הציר (Bore)</label>
+                                <span class="text-xs font-bold text-indigo-400"><span id="val-Shaft_Diameter">5</span> מ"מ</span>
+                            </div>
+                            <input type="range" id="param-Shaft_Diameter" min="1" max="40" step="0.5" value="5" oninput="updateParam('Shaft_Diameter', this.value)" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500">
+                        </div>
+                    </div>
+
+                    <!-- Shaft Type -->
+                    <div class="flex justify-between items-center gap-4">
+                        <label class="text-sm font-medium text-slate-200">סוג חיבור ציר</label>
+                        <select id="param-Shaft_Type" onchange="updateParam('Shaft_Type', this.value)" class="bg-slate-800 border border-slate-700 text-slate-200 text-sm rounded-md px-3 py-1.5 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
+                            <option value="none">ללא קדח</option>
+                            <option value="cylinder" selected>עגול (Cylinder)</option>
+                            <option value="keyway">שגם (Keyway)</option>
+                            <option value="hex">משושה (Hex)</option>
+                            <option value="D">פחוס D-Shape</option>
+                        </select>
+                    </div>
+
+                    <!-- Pin Holes Checkbox -->
+                    <div class="flex items-center gap-3 bg-slate-800/40 p-3 rounded-lg border border-slate-800 mt-4">
+                        <input type="checkbox" id="param-Pin_Holes" onchange="updateParam('Pin_Holes', this.checked)" class="w-4.5 h-4.5 text-indigo-600 bg-slate-700 border-slate-600 rounded focus:ring-indigo-500">
+                        <label for="param-Pin_Holes" class="text-sm font-medium text-slate-200">הוסף 2 חורי פינים צידיים (Pin Holes)</label>
+                    </div>
+
+                    <div id="pin-holes-params" class="hidden space-y-4 p-3 bg-slate-800/20 rounded-lg border border-slate-800/60 mt-2">
+                        <div class="grid grid-cols-2 gap-4">
+                            <!-- Pin Distance -->
+                            <div>
+                                <div class="flex justify-between items-center mb-1">
+                                    <label class="text-xs font-medium text-slate-300">מרחק מהמרכז</label>
+                                    <span class="text-xs font-bold text-indigo-400"><span id="val-Pin_Holes_Distance">5</span> מ"מ</span>
+                                </div>
+                                <input type="range" id="param-Pin_Holes_Distance" min="2" max="50" step="0.5" value="5" oninput="updateParam('Pin_Holes_Distance', this.value)" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500">
+                            </div>
+                            <!-- Pin Diameter -->
+                            <div>
+                                <div class="flex justify-between items-center mb-1">
+                                    <label class="text-xs font-medium text-slate-300 font-mono">קוטר החורים</label>
+                                    <span class="text-xs font-bold text-indigo-400"><span id="val-Pin_Holes_Diameter">2</span> מ"מ</span>
+                                </div>
+                                <input type="range" id="param-Pin_Holes_Diameter" min="0.5" max="10" step="0.1" value="2" oninput="updateParam('Pin_Holes_Diameter', this.value)" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 5: Spinner & Shroud -->
+                <div class="space-y-4">
+                    <h4 class="text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-800 pb-2">🛑 ספינר ( Spinner) ושרוול (Shroud)</h4>
+                    
+                    <div class="grid grid-cols-2 gap-4">
+                        <!-- Spinner Select -->
+                        <div>
+                            <label class="block text-xs font-medium text-slate-300 mb-1">סוג ספינר</label>
+                            <select id="param-Spinner" onchange="updateParam('Spinner', this.value)" class="w-full bg-slate-800 border border-slate-700 text-slate-200 text-sm rounded px-2 py-1.5 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
+                                <option value="none" selected>ללא ספינר</option>
+                                <option value="ogive">אוג'יב (Ogive)</option>
+                                <option value="parabolic">פרבולי (Parabolic)</option>
+                            </select>
+                        </div>
+                        <!-- Spinner Length -->
+                        <div>
+                            <div class="flex justify-between items-center mb-1">
+                                <label class="text-xs font-medium text-slate-300">אורך ספינר</label>
+                                <span class="text-xs font-bold text-indigo-400"><span id="val-Spinner_Length">20</span> מ"מ</span>
+                            </div>
+                            <input type="range" id="param-Spinner_Length" min="5" max="100" step="2" value="20" oninput="updateParam('Spinner_Length', this.value)" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500">
+                        </div>
+                    </div>
+
+                    <!-- Shroud Checkbox -->
+                    <div class="flex items-center gap-3 bg-slate-800/40 p-3 rounded-lg border border-slate-800">
+                        <input type="checkbox" id="param-Shroud" onchange="updateParam('Shroud', this.checked)" class="w-4.5 h-4.5 text-indigo-600 bg-slate-700 border-slate-600 rounded focus:ring-indigo-500">
+                        <label for="param-Shroud" class="text-sm font-medium text-slate-200">הוסף שרוול מגן מסביב ללהבים (Shroud)</label>
+                    </div>
+
+                    <div id="shroud-params" class="hidden space-y-4 p-3 bg-slate-800/20 rounded-lg border border-slate-800/60">
+                        <div class="grid grid-cols-2 gap-4">
+                            <!-- Shroud Length -->
+                            <div>
+                                <div class="flex justify-between items-center mb-1">
+                                    <label class="text-xs font-medium text-slate-300">אורך השרוול</label>
+                                    <span class="text-xs font-bold text-indigo-400"><span id="val-Shroud_Length">15</span> מ"מ</span>
+                                </div>
+                                <input type="range" id="param-Shroud_Length" min="5" max="80" step="1" value="15" oninput="updateParam('Shroud_Length', this.value)" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500">
+                            </div>
+                            <!-- Shroud Wall -->
+                            <div>
+                                <div class="flex justify-between items-center mb-1">
+                                    <label class="text-xs font-medium text-slate-300 font-mono">עובי דופן</label>
+                                    <span class="text-xs font-bold text-indigo-400"><span id="val-Shroud_Wall">1.8</span> מ"מ</span>
+                                </div>
+                                <input type="range" id="param-Shroud_Wall" min="0.8" max="6.0" step="0.2" value="1.8" oninput="updateParam('Shroud_Wall', this.value)" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Script Block -->
+    <script>
+        // Preset configurations matching the OpenSCAD example presets
+        const presets = {
+            rc_plane: {
+                Blades: 3,
+                Diameter: 120,
+                Direction: -1,
+                Pitch: 80,
+                Pitch_Tip: -1,
+                Chord_Mode: "ellipse",
+                Chord_Fraction: 0.15,
+                Ellipse_Length: 1.1,
+                Centerline: 0.3,
+                Sweep: 0.0,
+                Fairing: 4,
+                NACA_Root: 9430,
+                NACA_Mid: 6412,
+                NACA_Tip: 4412,
+                Transition_Point: 0.33,
+                Trailing_Thickness: 0.4,
+                Root_Diameter: 10,
+                Root_Height: 12,
+                Hub_Extend: 2,
+                Shaft_Type: "cylinder",
+                Shaft_Diameter: 3.17,
+                Pin_Holes: false,
+                Pin_Holes_Distance: 5,
+                Pin_Holes_Diameter: 2,
+                Spinner: "ogive",
+                Spinner_Length: 8,
+                Shroud: false,
+                Shroud_Length: 15,
+                Shroud_Wall: 1.8
+            },
+            airplane: {
+                Blades: 3,
+                Diameter: 150,
+                Direction: -1,
+                Pitch: 100,
+                Pitch_Tip: -1,
+                Chord_Mode: "ellipse",
+                Chord_Fraction: 0.15,
+                Ellipse_Length: 1.1,
+                Centerline: 0.3,
+                Sweep: 0.0,
+                Fairing: 2,
+                NACA_Root: 6412,
+                NACA_Mid: 4412,
+                NACA_Tip: 2412,
+                Transition_Point: 0.33,
+                Trailing_Thickness: 0.4,
+                Root_Diameter: 12,
+                Root_Height: 10,
+                Hub_Extend: 2,
+                Shaft_Type: "cylinder",
+                Shaft_Diameter: 5.0,
+                Pin_Holes: false,
+                Pin_Holes_Distance: 5,
+                Pin_Holes_Diameter: 2,
+                Spinner: "none",
+                Spinner_Length: 20,
+                Shroud: false,
+                Shroud_Length: 15,
+                Shroud_Wall: 1.8
+            },
+            toy_boat: {
+                Blades: 3,
+                Diameter: 80,
+                Direction: 1,
+                Pitch: 60,
+                Pitch_Tip: -1,
+                Chord_Mode: "ellipse",
+                Chord_Fraction: 0.70,
+                Ellipse_Length: 1.0,
+                Centerline: 0.5,
+                Sweep: 1.0,
+                Fairing: 0,
+                NACA_Root: 6410,
+                NACA_Mid: 4410,
+                NACA_Tip: 2410,
+                Transition_Point: 0.40,
+                Trailing_Thickness: 0.4,
+                Root_Diameter: 12,
+                Root_Height: 24,
+                Hub_Extend: 0,
+                Shaft_Type: "cylinder",
+                Shaft_Diameter: 4,
+                Pin_Holes: false,
+                Pin_Holes_Distance: 5,
+                Pin_Holes_Diameter: 2,
+                Spinner: "none",
+                Spinner_Length: 20,
+                Shroud: false,
+                Shroud_Length: 20,
+                Shroud_Wall: 2.0
+            },
+            pc_fan: {
+                Blades: 7,
+                Diameter: 120,
+                Direction: 1,
+                Pitch: 40,
+                Pitch_Tip: 30,
+                Chord_Mode: "ellipse",
+                Chord_Fraction: 0.28,
+                Ellipse_Length: 1.8,
+                Centerline: 0.7,
+                Sweep: -0.25,
+                Fairing: 0,
+                NACA_Root: 12,
+                NACA_Mid: 12,
+                NACA_Tip: 10,
+                Transition_Point: 0.30,
+                Trailing_Thickness: 0.3,
+                Root_Diameter: 40,
+                Root_Height: 10,
+                Hub_Extend: 0,
+                Shaft_Type: "cylinder",
+                Shaft_Diameter: 5.0,
+                Pin_Holes: false,
+                Pin_Holes_Distance: 12,
+                Pin_Holes_Diameter: 3,
+                Spinner: "none",
+                Spinner_Length: 20,
+                Shroud: false,
+                Shroud_Length: 12,
+                Shroud_Wall: 1.5
+            },
+            pullcopter: {
+                Blades: 3,
+                Diameter: 160,
+                Direction: 1,
+                Pitch: 160,
+                Pitch_Tip: -1,
+                Chord_Mode: "ellipse",
+                Chord_Fraction: 0.2,
+                Ellipse_Length: 1.2,
+                Centerline: 1.0,
+                Sweep: -0.25,
+                Fairing: 4,
+                NACA_Root: 9440,
+                NACA_Mid: 6412,
+                NACA_Tip: 3412,
+                Transition_Point: 0.33,
+                Trailing_Thickness: 0.4,
+                Root_Diameter: 16,
+                Root_Height: 6,
+                Hub_Extend: 2,
+                Shaft_Type: "cylinder",
+                Shaft_Diameter: 6,
+                Pin_Holes: false,
+                Pin_Holes_Distance: 6,
+                Pin_Holes_Diameter: 2,
+                Spinner: "ogive",
+                Spinner_Length: 10,
+                Shroud: true,
+                Shroud_Length: 10,
+                Shroud_Wall: 1.8
+            }
+        };
+
+        // Current state initialized to RC Plane
+        const state = { ...presets.rc_plane };
+
+        // Initialize parameter controls with current state values
+        function syncControlsWithState() {
+            Object.keys(state).forEach(key => {
+                const element = document.getElementById(`param-${key}`);
+                if (element) {
+                    if (element.type === 'checkbox') {
+                        element.checked = state[key];
+                    } else {
+                        element.value = state[key];
+                    }
+                }
+                updateUIValue(key, state[key]);
+            });
+            
+            // Toggle visibility of shroud parameters
+            const shroudParams = document.getElementById('shroud-params');
+            if (shroudParams) {
+                shroudParams.style.display = state.Shroud ? 'block' : 'none';
+            }
+
+            // Toggle visibility of pin holes parameters
+            const pinHolesParams = document.getElementById('pin-holes-params');
+            if (pinHolesParams) {
+                pinHolesParams.style.display = state.Pin_Holes ? 'block' : 'none';
+            }
+        }
+
+        // Helper to update specific textual value labels in the UI
+        function updateUIValue(key, value) {
+            const valSpan = document.getElementById(`val-${key}`);
+            if (valSpan) {
+                valSpan.textContent = value;
+            }
+
+            // Custom labels
+            if (key === 'Pitch_Tip') {
+                const lbl = document.getElementById('lbl-Pitch_Tip');
+                if (value == -1) {
+                    lbl.innerHTML = `<span id="val-Pitch_Tip">-1</span> (זהה לבסיס: ${state.Pitch} מ"מ)`;
+                } else {
+                    lbl.innerHTML = `<span id="val-Pitch_Tip">${value}</span> מ"מ/סיבוב`;
+                }
+            }
+            if (key === 'Centerline') {
+                const lbl = document.getElementById('lbl-Centerline');
+                if (value == 0) lbl.textContent = "0.0 (יישור לפי השפה המובילה - LE)";
+                else if (value == 1) lbl.textContent = "1.0 (יישור לפי השפה האחורית - TE)";
+                else if (value == 0.3) lbl.textContent = "0.3 (עובי מקסימלי במרכז - ריאליסטי)";
+                else lbl.textContent = `${Number(value).toFixed(1)} (יישור מותאם אישית)`;
+            }
+        }
+
+        // Update single parameter
+        function updateParam(key, value) {
+            // parse numeric values if needed
+            if (key === 'Shroud') {
+                state[key] = value === true || value === 'true';
+                document.getElementById('shroud-params').style.display = state[key] ? 'block' : 'none';
+            } else if (key === 'Pin_Holes') {
+                state[key] = value === true || value === 'true';
+                document.getElementById('pin-holes-params').style.display = state[key] ? 'block' : 'none';
+            } else if (key === 'Chord_Mode' || key === 'Shaft_Type' || key === 'Spinner') {
+                state[key] = value;
+            } else {
+                state[key] = Number(value);
+            }
+            
+            updateUIValue(key, state[key]);
+            
+            // If pitch tip needs updating relative to base pitch label
+            if (key === 'Pitch') {
+                updateUIValue('Pitch_Tip', state.Pitch_Tip);
+            }
+
+            // Regenerate the 3D geometry and OpenSCAD code
+            generateOpenSCADCode();
+            rebuildPropellerMesh();
+        }
+
+        // Load Preset
+        function loadPreset(name) {
+            if (presets[name]) {
+                Object.assign(state, presets[name]);
+                syncControlsWithState();
+                generateOpenSCADCode();
+                rebuildPropellerMesh();
+            }
+        }
+
+        // Generate OpenSCAD Code block
+        function generateOpenSCADCode() {
+            const template = `include <BOSL2/std.scad>;
+
+// Generated using Parametric Propeller Generator Web Tool
+// Number of blades
+Blades = ${state.Blades};
+
+// Propeller diameter (mm)
+Diameter = ${state.Diameter};
+
+// Rotation direction (1: Clockwise, -1: Counterclockwise)
+Direction = ${state.Direction};
+
+// Diameter where blade root starts
+Root_Diameter = ${state.Root_Diameter};
+
+// Axial limit for the blade root chord (mm)
+Root_Height = ${state.Root_Height};
+
+// Pitch in mm per revolution
+Pitch = ${state.Pitch};
+
+// Pitch at the blade tip (-1 = same as base pitch)
+Pitch_Tip = ${state.Pitch_Tip}; 
+
+// How chord width tapers along blade span (ellipse/linear/constant)
+Chord_Mode = "${state.Chord_Mode}"; 
+
+// Maximum chord fraction of blade length
+Chord_Fraction = ${state.Chord_Fraction}; 
+
+// Ellipse length factor for planform taper
+Ellipse_Length = ${state.Ellipse_Length};  
+
+// Centerline position along the chord for alignment (0 = LE, 1 = TE)
+Centerline = ${state.Centerline}; 
+
+// Fairing thickness to blend into hub
+Fairing = ${state.Fairing};   
+
+// Sweep in degrees per mm
+Sweep = ${state.Sweep};
+
+// 4-digit NACA airfoils
+NACA_Root = ${state.NACA_Root};
+NACA_Mid = ${state.NACA_Mid};
+NACA_Tip = ${state.NACA_Tip};
+
+// Where root blends into mid (fraction of blade length)
+Transition_Point = ${state.Transition_Point}; 
+
+// Thickness of trailing edge for printability
+Trailing_Thickness = ${state.Trailing_Thickness}; 
+
+// Extend hub length along axis
+Hub_Extend = ${state.Hub_Extend};
+
+// Shaft type
+Shaft_Type = "${state.Shaft_Type}"; 
+
+// Shaft diameter (or WAF for hex bores)
+Shaft_Diameter = ${state.Shaft_Diameter};
+
+// Shaft depth (-1 = same as hub height)
+Shaft_Depth = -1;
+
+// Chamfer shaft edges
+Shaft_Chamfer = 0.4;
+
+// Override keyway size as [width, height]
+Keyway_Size = [0, 0];
+
+// Enable two side pin/mounting holes parallel to shaft
+Pin_Holes = ${state.Pin_Holes};
+
+// Distance from the center to each of the two pin holes (mm)
+Pin_Holes_Distance = ${state.Pin_Holes_Distance};
+
+// Diameter of the pin holes (mm)
+Pin_Holes_Diameter = ${state.Pin_Holes_Diameter};
+
+// Spinner configuration
+Spinner = "${state.Spinner}"; 
+Spinner_On_Hub = true;
+Spinner_Diameter = ${state.Root_Diameter};
+Spinner_Length = ${state.Spinner_Length};
+Spinner_Rounding = 0.5;
+
+// Shroud configuration
+Shroud = ${state.Shroud};
+Shroud_Offset = 0;
+Shroud_Wall = ${state.Shroud_Wall};
+Shroud_Length = ${state.Shroud_Length};
+Shroud_Chamfer = 0.4;
+
+/* [Render settings] */
+Points = 0;
+Slices = 0;
+Color = "#E0E0E0"; 
+
+_Hub_Diameter = Root_Diameter;
+_Hub_Length = Root_Height + Hub_Extend;
+_Shiftout = 0.01;
+$fa = 4;
+$fs = 0.2;
+
+// Execute rendering
+color(Color) generate();
+
+module generate() {
+    difference() {
+        union() {
+            // Propeller
+            propeller(
+                blades=Blades,
+                propdia=Diameter,
+                hubdia=Root_Diameter,
+                bladepitch=Pitch,
+                pitch_mode=Pitch_Tip < 0 ? "constant" : "linear",
+                pitch_tip=Pitch_Tip < 0 ? Pitch : Pitch_Tip,
+                maxchordfrac=Chord_Fraction,
+                hublen=Root_Height,
+                elenfrac=Ellipse_Length,
+                dir=Direction,
+                centerline=Centerline,
+                angle_sweep=Sweep,
+                te_thickness=Trailing_Thickness,
+                fairing=Fairing,
+                naca_root=NACA_Root,
+                naca_mid=NACA_Mid,
+                naca_tip=NACA_Tip,
+                root_transition=Transition_Point,
+                profilepoints=Points,
+                slices=Slices
+            );
+
+            // Hub
+            cyl(d=_Hub_Diameter, l=_Hub_Length, anchor=BOTTOM);
+            
+            // Shroud
+            if (Shroud) {
+                shroud(
+                    d=Diameter + Shroud_Offset,
+                    wall=Shroud_Wall,
+                    l=Shroud_Length,
+                    chamfer=Shroud_Chamfer,
+                    $fa = $fa/2
+                );
+            }
+            
+            // Spinner
+            if (Spinner != "none") {
+                spinner(
+                    type=Spinner,
+                    d=Spinner_Diameter,
+                    l=Spinner_Length,
+                    rounding=Spinner_Rounding
+                );
+            }
+        }
+        shaft();
+        
+        // Symmetrical pin holes parallel to shaft
+        if (Pin_Holes) {
+            h = (Shaft_Depth > 0 ? Shaft_Depth : _Hub_Length) + _Shiftout;
+            up(h / 2) {
+                translate([Pin_Holes_Distance, 0, 0])
+                    cyl(d=Pin_Holes_Diameter, h=h);
+                translate([-Pin_Holes_Distance, 0, 0])
+                    cyl(d=Pin_Holes_Diameter, h=h);
+            }
+        }
+    }
+}
+
+// ... (Rest of code remains the same as the template file)`;
+            
+            document.getElementById('code-block').textContent = template;
+        }
+
+        // Tab switcher
+        function switchTab(tabId) {
+            document.getElementById('code-tab').classList.add('hidden');
+            document.getElementById('info-tab').classList.add('hidden');
+            document.getElementById('btn-code-tab').className = "px-4 py-2 text-sm font-semibold text-slate-400 hover:text-slate-200";
+            document.getElementById('btn-info-tab').className = "px-4 py-2 text-sm font-semibold text-slate-400 hover:text-slate-200";
+
+            document.getElementById(tabId).classList.remove('hidden');
+            document.getElementById(`btn-${tabId}`).className = "px-4 py-2 text-sm font-semibold border-b-2 border-indigo-500 text-indigo-400";
+        }
+
+        // Copy Code to Clipboard
+        function copyCode() {
+            const codeText = document.getElementById('code-block').textContent;
+            navigator.clipboard.writeText(codeText).then(() => {
+                const icon = document.getElementById('copy-icon');
+                const text = document.getElementById('copy-text');
+                
+                icon.className = "fa-solid fa-check text-emerald-400 animate-bounce";
+                text.textContent = "הועתק בהצלחה!";
+                
+                setTimeout(() => {
+                    icon.className = "fa-regular fa-copy";
+                    text.textContent = "העתק קוד";
+                }, 2000);
+            }).catch(err => {
+                console.error("שגיאה בהעתקת הקוד: ", err);
+            });
+        }
+
+        // ==========================================
+        // THREE.JS 3D PREVIEW CODE
+        // ==========================================
+        let scene, camera, renderer, controls;
+        let propGroup; // Group holding all propeller components
+        let isSpinning = false;
+        let isWireframe = false;
+        const bladeMaterial = new THREE.MeshStandardMaterial({
+            color: 0x94a3b8,
+            roughness: 0.4,
+            metalness: 0.1,
+            side: THREE.DoubleSide
+        });
+        const hubMaterial = new THREE.MeshStandardMaterial({
+            color: 0x64748b,
+            roughness: 0.5,
+            metalness: 0.2
+        });
+        const spinnerMaterial = new THREE.MeshStandardMaterial({
+            color: 0x475569,
+            roughness: 0.3,
+            metalness: 0.3
+        });
+        const shroudMaterial = new THREE.MeshStandardMaterial({
+            color: 0x334155,
+            roughness: 0.5,
+            metalness: 0.1,
+            side: THREE.DoubleSide
+        });
+        const holeMaterial = new THREE.MeshBasicMaterial({
+            color: 0x0f172a // Blends with scene background to look like empty space holes!
+        });
+
+        function initThreeJS() {
+            const container = document.getElementById('canvas-container');
+            
+            // Scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0f172a);
+            
+            // Camera
+            camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 1, 1000);
+            camera.position.set(0, 150, 250);
+            
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            renderer.shadowMap.enabled = true;
+            container.appendChild(renderer.domElement);
+            
+            // Controls
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            
+            // Grid and Axes
+            const gridHelper = new THREE.GridHelper(300, 30, 0x334155, 0x1e293b);
+            gridHelper.position.y = -20;
+            scene.add(gridHelper);
+            
+            // Lights
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+            scene.add(ambientLight);
+            
+            const dirLight1 = new THREE.DirectionalLight(0xffffff, 0.8);
+            dirLight1.position.set(100, 150, 50);
+            scene.add(dirLight1);
+            
+            const dirLight2 = new THREE.DirectionalLight(0xa5b4fc, 0.4);
+            dirLight2.position.set(-100, -50, -50);
+            scene.add(dirLight2);
+
+            // Group to hold our custom propeller
+            propGroup = new THREE.Group();
+            scene.add(propGroup);
+            
+            window.addEventListener('resize', onWindowResize);
+            
+            animate();
+        }
+
+        function onWindowResize() {
+            const container = document.getElementById('canvas-container');
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            if (isSpinning) {
+                // Rotation matches CCW or CW based on Direction
+                propGroup.rotation.z += 0.02 * state.Direction;
+            }
+            
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        function toggleSpin() {
+            isSpinning = !isSpinning;
+            const icon = document.getElementById('spin-icon');
+            const btn = document.getElementById('btn-spin');
+            if (isSpinning) {
+                icon.className = "fa-solid fa-pause w-4 h-4 flex items-center justify-center text-emerald-400";
+                btn.classList.add('bg-indigo-600');
+            } else {
+                icon.className = "fa-solid fa-play w-4 h-4 flex items-center justify-center";
+                btn.classList.remove('bg-indigo-600');
+            }
+        }
+
+        function toggleWireframe() {
+            isWireframe = !isWireframe;
+            bladeMaterial.wireframe = isWireframe;
+            hubMaterial.wireframe = isWireframe;
+            spinnerMaterial.wireframe = isWireframe;
+            shroudMaterial.wireframe = isWireframe;
+        }
+
+        function resetCamera() {
+            camera.position.set(0, 150, 250);
+            controls.target.set(0, 0, 0);
+            propGroup.rotation.set(0, 0, 0);
+        }
+
+        // ==========================================
+        // GEOMETRY GENERATORS FOR PROPELLER BLADES
+        // ==========================================
+        function naca_params(code) {
+            const M = 0.01 * Math.floor(code / 1000);
+            const P = 0.1 * (Math.floor(code / 100) % 10);
+            const T = 0.01 * (code % 100);
+            return { M, P, T };
+        }
+
+        function naca_thickness(x, T) {
+            return 5 * T * (0.2969 * Math.sqrt(x) - 0.126 * x - 0.3516 * x * x + 0.2843 * Math.pow(x, 3) - 0.1036 * Math.pow(x, 4));
+        }
+
+        function naca_camber(x, M, P) {
+            if (M === 0) return 0;
+            const Pc = Math.max(1e-5, Math.min(1 - 1e-5, P));
+            if (x < Pc) {
+                return (M / (Pc * Pc)) * (2 * Pc * x - x * x);
+            } else {
+                return (M / ((1 - Pc) * (1 - Pc))) * ((1 - 2 * Pc) + 2 * Pc * x - x * x);
+            }
+        }
+
+        // Camber gradient
+        function naca_gradient(x, M, P) {
+            if (M === 0) return 0;
+            const Pc = Math.max(1e-5, Math.min(1 - 1e-5, P));
+            if (x < Pc) {
+                return (2 * M * (Pc - x)) / (Pc * Pc);
+            } else {
+                return (2 * M * (Pc - x)) / ((1 - Pc) * (1 - Pc));
+            }
+        }
+
+        function naca_surface(xp, M, P, T, chordlen, origin, d, te_thick, s) {
+            const theta = Math.atan(naca_gradient(xp, M, P));
+            const yc = naca_camber(xp, M, P);
+            const yt = naca_thickness(xp, T);
+            
+            const xCoord = chordlen * d * (xp - s * yt * Math.sin(theta) - origin);
+            const yCoord = chordlen * (yc + s * yt * Math.cos(theta)) + s * xp * te_thick / 2;
+            
+            return { x: xCoord, y: yCoord };
+        }
+
+        function generateNacaProfile2D(n, M, P, T, chordlen, origin, dir, te_thick) {
+            const points = [];
+            const d = (dir < 0 ? -1 : 1);
+            const org = Math.max(0, Math.min(1, origin));
+            
+            const xVals = [];
+            for (let i = 0; i <= n; i++) {
+                const x = i / n;
+                const xp = 0.5 * (1 - Math.cos(Math.PI * x)); // Cosine clustering
+                xVals.push(xp);
+            }
+            
+            // Upper profile
+            for (let i = n; i >= 0; i--) {
+                const xp = xVals[i];
+                points.push(naca_surface(xp, M, P, T, chordlen, org, d, te_thick, 1));
+            }
+            // Lower profile
+            for (let i = 1; i <= n; i++) {
+                const xp = xVals[i];
+                points.push(naca_surface(xp, M, P, T, chordlen, org, d, te_thick, -1));
+            }
+            
+            return points;
+        }
+
+        function ellipseD(majaxis, minaxis, angle) {
+            const a = 0.5 * majaxis;
+            const b = 0.5 * minaxis;
+            const bc = b * Math.cos(angle);
+            const as_val = a * Math.sin(angle);
+            return Math.sqrt(bc * bc + as_val * as_val) > 1e-6 
+                ? (2 * a * b) / Math.sqrt(bc * bc + as_val * as_val) 
+                : minaxis;
+        }
+
+        function lerp(start, end, amt) {
+            return (1 - amt) * start + amt * end;
+        }
+
+        function createBladeGeometry() {
+            const geom = new THREE.BufferGeometry();
+            
+            const diameter = state.Diameter;
+            const rootDiameter = state.Root_Diameter;
+            const rootHeight = state.Root_Height;
+            const pitch = state.Pitch;
+            const pitchTip = state.Pitch_Tip;
+            const direction = state.Direction;
+            const chordFraction = state.Chord_Fraction;
+            const ellipseLength = state.Ellipse_Length;
+            const centerline = state.Centerline;
+            const sweep = state.Sweep;
+            const nacaRoot = state.NACA_Root;
+            const nacaMid = state.NACA_Mid;
+            const nacaTip = state.NACA_Tip;
+            const transitionPoint = state.Transition_Point;
+            const teThickness = state.Trailing_Thickness;
+            const fairing = state.Fairing;
+
+            const rHub = rootDiameter / 2;
+            const rTip = diameter / 2;
+            const bLength = rTip - rHub;
+            const basePitch = pitch >= 0 ? pitch : bLength;
+            const tipPitchVal = pitchTip >= 0 ? pitchTip : basePitch;
+            const esemimajor = ellipseLength * bLength;
+            const maxChordLen = bLength * chordFraction * 2;
+            const hh = Math.min(maxChordLen, rootHeight);
+
+            const angleAtHub = -direction * Math.atan(basePitch / (2 * Math.PI * rHub));
+            const fairingthick = fairing / ellipseD(maxChordLen, hh, angleAtHub);
+
+            const slicesCount = 20;
+            const pointsPerSide = 12;
+            const grid = [];
+
+            const rootDigits = naca_params(nacaRoot);
+            const midDigits = naca_params(nacaMid);
+            const tipDigits = naca_params(nacaTip);
+
+            for (let s = 0; s <= slicesCount; s++) {
+                const t = s / slicesCount;
+                const z = t * bLength;
+                const rz = rHub + z;
+
+                let M, P, T;
+                if (t < transitionPoint) {
+                    const interp = transitionPoint > 0 ? Math.sin(Math.PI / 2 * (t / transitionPoint)) : 0;
+                    M = lerp(rootDigits.M, midDigits.M, interp);
+                    P = lerp(rootDigits.P, midDigits.P, interp);
+                    T = lerp(rootDigits.T, midDigits.T, interp);
+                } else {
+                    const interp = transitionPoint < 1 ? 1 - Math.cos(Math.PI / 2 * ((t - transitionPoint) / (1 - transitionPoint))) : 1;
+                    M = lerp(midDigits.M, tipDigits.M, interp);
+                    P = lerp(midDigits.P, tipDigits.P, interp);
+                    T = lerp(midDigits.T, tipDigits.T, interp);
+                }
+
+                const fthick = fairing > 0 ? fairingthick * (1 - Math.sin(Math.PI / 2 * Math.min(1, z / fairing))) : 0;
+                const thick = T + fthick;
+
+                const localPitch = basePitch + (tipPitchVal - basePitch) * t;
+                const attackAngle = -direction * Math.atan(localPitch / (2 * Math.PI * rz));
+
+                let c = maxChordLen;
+                if (state.Chord_Mode === 'ellipse') {
+                    c = maxChordLen * Math.sqrt(Math.max(0, 1 - (z * z) / (esemimajor * esemimajor)));
+                } else if (state.Chord_Mode === 'linear') {
+                    c = lerp(maxChordLen, maxChordLen / 2, t);
+                } else if (state.Chord_Mode === 'constant') {
+                    c = maxChordLen;
+                }
+                const chordLen = ellipseD(c, hh, attackAngle);
+
+                const profile2D = generateNacaProfile2D(pointsPerSide, M, P, thick, chordLen, centerline, direction, teThickness);
+
+                const slicePoints = [];
+                const localSweep = sweep * direction * (Math.PI / 180) * z;
+                const krad = 1 / rz;
+
+                for (let p = 0; p < profile2D.length; p++) {
+                    const pt = profile2D[p];
+                    const ca = Math.cos(attackAngle);
+                    const sa = Math.sin(attackAngle);
+                    
+                    const rx = pt.x * ca - pt.y * sa;
+                    const ry = pt.x * sa + pt.y * ca;
+
+                    const angle = rx * krad + localSweep;
+                    
+                    const px = rz * Math.cos(angle);
+                    const py = rz * Math.sin(angle);
+                    const pz = ry;
+
+                    slicePoints.push(new THREE.Vector3(px, py, pz));
+                }
+                grid.push(slicePoints);
+            }
+
+            const geomVertices = [];
+            const geomIndices = [];
+            const numPoints = pointsPerSide * 2;
+
+            for (let s = 0; s <= slicesCount; s++) {
+                for (let p = 0; p < numPoints; p++) {
+                    const v = grid[s][p];
+                    geomVertices.push(v.x, v.y, v.z);
+                }
+            }
+
+            for (let s = 0; s < slicesCount; s++) {
+                for (let p = 0; p < numPoints; p++) {
+                    const nextP = (p + 1) % numPoints;
+                    
+                    const idx00 = s * numPoints + p;
+                    const idx10 = (s + 1) * numPoints + p;
+                    const idx01 = s * numPoints + nextP;
+                    const idx11 = (s + 1) * numPoints + nextP;
+                    
+                    geomIndices.push(idx00, idx10, idx11);
+                    geomIndices.push(idx00, idx11, idx01);
+                }
+            }
+
+            // Tip Cap
+            const tipIndexStart = slicesCount * numPoints;
+            let tx = 0, ty = 0, tz = 0;
+            for (let p = 0; p < numPoints; p++) {
+                const v = grid[slicesCount][p];
+                tx += v.x; ty += v.y; tz += v.z;
+            }
+            tx /= numPoints; ty /= numPoints; tz /= numPoints;
+            const tipCenterIdx = geomVertices.length / 3;
+            geomVertices.push(tx, ty, tz);
+            for (let p = 0; p < numPoints; p++) {
+                const nextP = (p + 1) % numPoints;
+                geomIndices.push(tipCenterIdx, tipIndexStart + nextP, tipIndexStart + p);
+            }
+
+            // Root Cap
+            let rx = 0, ry = 0, rz = 0;
+            for (let p = 0; p < numPoints; p++) {
+                const v = grid[0][p];
+                rx += v.x; ry += v.y; rz += v.z;
+            }
+            rx /= numPoints; ry /= numPoints; rz /= numPoints;
+            const rootCenterIdx = geomVertices.length / 3;
+            geomVertices.push(rx, ry, rz);
+            for (let p = 0; p < numPoints; p++) {
+                const nextP = (p + 1) % numPoints;
+                geomIndices.push(rootCenterIdx, p, nextP);
+            }
+
+            geom.setAttribute('position', new THREE.Float32BufferAttribute(geomVertices, 3));
+            geom.setIndex(geomIndices);
+            geom.computeVertexNormals();
+
+            return geom;
+        }
+
+        function createOgiveSpinnerPoints(d, l) {
+            const r = d / 2;
+            const points = [];
+            const R = (r * r + l * l) / (2 * r);
+            const centerX = r - R;
+            const steps = 15;
+            for (let i = 0; i <= steps; i++) {
+                const y = (i / steps) * l;
+                const x = centerX + Math.sqrt(Math.max(0, R * R - y * y));
+                points.push(new THREE.Vector2(x, y));
+            }
+            return points;
+        }
+
+        function createParabolicSpinnerPoints(d, l) {
+            const r = d / 2;
+            const exponent = 1.25;
+            const points = [];
+            for (let i = 0; i <= 15; i++) {
+                const x = i / 15;
+                const rx = x * r;
+                const ry = l * (1 - Math.pow(x, exponent) * Math.pow(x, exponent));
+                points.push(new THREE.Vector2(rx, ry));
+            }
+            points.reverse();
+            return points;
+        }
+
+        // Main rebuild trigger
+        function rebuildPropellerMesh() {
+            while(propGroup.children.length > 0){ 
+                const obj = propGroup.children[0];
+                propGroup.remove(obj); 
+            }
+
+            const {
+                Blades,
+                Root_Diameter,
+                Root_Height,
+                Hub_Extend,
+                Spinner,
+                Spinner_Length,
+                Shroud,
+                Shroud_Length,
+                Shroud_Wall,
+                Pin_Holes,
+                Pin_Holes_Distance,
+                Pin_Holes_Diameter
+            } = state;
+
+            const hubLen = Root_Height + Hub_Extend;
+
+            // 1. Build Hub
+            const hubGeom = new THREE.CylinderGeometry(Root_Diameter/2, Root_Diameter/2, hubLen, 32);
+            const hubMesh = new THREE.Mesh(hubGeom, hubMaterial);
+            hubMesh.rotation.x = Math.PI / 2;
+            hubMesh.position.z = hubLen / 2;
+            propGroup.add(hubMesh);
+
+            // 2. Build Blades
+            const bladeGeom = createBladeGeometry();
+            for (let b = 0; b < Blades; b++) {
+                const bladeMesh = new THREE.Mesh(bladeGeom, bladeMaterial);
+                bladeMesh.rotation.z = b * (2 * Math.PI / Blades);
+                propGroup.add(bladeMesh);
+            }
+
+            // 3. Build Spinner
+            if (Spinner !== 'none') {
+                let points = [];
+                if (Spinner === 'ogive') {
+                    points = createOgiveSpinnerPoints(Root_Diameter, Spinner_Length);
+                } else if (Spinner === 'parabolic') {
+                    points = createParabolicSpinnerPoints(Root_Diameter, Spinner_Length);
+                }
+                const spinnerGeom = new THREE.LatheGeometry(points, 32);
+                const spinnerMesh = new THREE.Mesh(spinnerGeom, spinnerMaterial);
+                spinnerMesh.rotation.x = -Math.PI / 2;
+                spinnerMesh.position.z = hubLen;
+                propGroup.add(spinnerMesh);
+            }
+
+            // 4. Build Shroud
+            if (Shroud) {
+                const shroudRInner = state.Diameter / 2 + 1;
+                const shroudROuter = shroudRInner + Shroud_Wall;
+                const halfL = Shroud_Length / 2;
+                
+                const shroudPoints = [
+                    new THREE.Vector2(shroudRInner, -halfL),
+                    new THREE.Vector2(shroudROuter, -halfL),
+                    new THREE.Vector2(shroudROuter, halfL),
+                    new THREE.Vector2(shroudRInner, halfL),
+                    new THREE.Vector2(shroudRInner, -halfL)
+                ];
+                
+                const shroudGeom = new THREE.LatheGeometry(shroudPoints, 48);
+                const shroudMesh = new THREE.Mesh(shroudGeom, shroudMaterial);
+                shroudMesh.rotation.x = -Math.PI / 2;
+                shroudMesh.position.z = Shroud_Length / 2;
+                propGroup.add(shroudMesh);
+            }
+
+            // 5. Build Pin Holes (Visual representation by drawing background-colored cylinders cutting through hub)
+            if (Pin_Holes) {
+                // Symmetrical holes offset along X axis
+                const pinGeom = new THREE.CylinderGeometry(Pin_Holes_Diameter / 2, Pin_Holes_Diameter / 2, hubLen + 0.1, 16);
+                
+                const pinMesh1 = new THREE.Mesh(pinGeom, holeMaterial);
+                pinMesh1.rotation.x = Math.PI / 2;
+                pinMesh1.position.set(Pin_Holes_Distance, 0, hubLen / 2);
+                propGroup.add(pinMesh1);
+
+                const pinMesh2 = new THREE.Mesh(pinGeom, holeMaterial);
+                pinMesh2.rotation.x = Math.PI / 2;
+                pinMesh2.position.set(-Pin_Holes_Distance, 0, hubLen / 2);
+                propGroup.add(pinMesh2);
+            }
+        }
+
+        // ==========================================
+        // APP INITIALIZATION
+        // ==========================================
+        window.onload = () => {
+            initThreeJS();
+            syncControlsWithState();
+            generateOpenSCADCode();
+            rebuildPropellerMesh();
+        };
+    </script>
+</body>
+</html>
