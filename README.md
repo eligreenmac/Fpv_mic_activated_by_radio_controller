@@ -6,6 +6,17 @@ Recording is triggered seamlessly from a radio controller switch (AUX channel) v
 
 ---
 
+## Required Hardware (Components to Buy) 🛒
+
+| Component | Image | Description |
+| :--- | :---: | :--- |
+| **ESP32-C3 Super Mini** | <img src="images/esp32_c3_super_mini.jpg" width="200" alt="ESP32-C3 Super Mini"> | Ultra-compact development board with USB-C, 160MHz RISC-V processor, hardware timer, and ADC. |
+| **MicroSD Card Module** | <img src="images/sd_module.jpg" width="200" alt="MicroSD Card Reader Module"> | Standard Micro SD (TF) Card Reader Shield with SPI interface (3.3V power/logic). |
+| **MAX4466 Microphone**<br>*(Option 1 - Manual Gain)* | <img src="images/max4466.jpg" width="200" alt="MAX4466 Microphone"> | Electret microphone amplifier with adjustable trimmer potentiometer on the back (dial counter-clockwise for minimum 25x gain). |
+| **MAX9814 Microphone**<br>*(Option 2 - Auto Gain AGC)* | <img src="images/max9814.jpg" width="200" alt="MAX9814 Microphone"> | Electret microphone amplifier with hardware Automatic Gain Control (AGC). Solder `GAIN` to `VDD` for 40dB low-gain mode. |
+
+---
+
 ## Supported Microphones (Drop-in Replacements)
 
 You can choose either of the following two microphones (both connect to **GPIO 0** without any code changes):
