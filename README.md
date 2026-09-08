@@ -36,7 +36,7 @@ You can choose either of the following two microphones (both connect to **GPIO 0
 | | `CS` | `7` | SPI Chip Select |
 | **Flight Controller** | `4.5V / 5V` | `5V` | Powered from FC (USB or LiPo) |
 | | `GND` | `G` | Shared Ground |
-| | `TX1 (e.g. B06)` | `10` (GPIO 10) | 3.3V Logic Trigger Input |
+| | `Spare TX Pad (e.g. TX1, TX2)` | `10` (GPIO 10) | 3.3V Logic Trigger Input |
 
 ---
 
@@ -49,30 +49,46 @@ You can choose either of the following two microphones (both connect to **GPIO 0
 
 ---
 
-## Betaflight Setup (PINIO Trigger)
+## Betaflight Setup: Step-by-Step PINIO Resource Remap
 
-To control the recording trigger from your radio transmitter using a spare TX pad (e.g. `TX1`):
+> [!NOTE]
+> Every Flight Controller (FC) model uses different internal processor pin names (e.g., `A09`, `B06`, `C06`, `A02`). The MCU pin address is **not fixed** and depends on your specific FC board and which TX pad you choose to wire.
 
+Follow this universal 4-step process for any Flight Controller:
+
+### Step 1: Choose a Spare TX Pad
+Pick any free, unused UART TX pad on your Flight Controller board (for example: `TX1`, `TX2`, `TX6`, etc.) and solder a wire from it to **Pin 10 (GPIO 10)** on the ESP32-C3.
+
+### Step 2: Identify Your FC's Physical Pin in the CLI
 1. Connect your flight controller to **Betaflight Configurator**.
-2. Go to the **CLI** tab and find your TX1 pin name by typing:
+2. Navigate to the **CLI** tab.
+3. Type `resource` and hit **Enter**.
+4. Scroll through the output and look for your chosen UART TX index:
    ```text
-   resource
+   resource SERIAL_TX <UART_NUMBER> <PIN_NAME>
    ```
-   *(Look for `resource SERIAL_TX 1 <PIN>`, e.g. `B06`).*
+   * *Example 1:* If you soldered to `TX1` and the CLI shows `resource SERIAL_TX 1 B06`, your pin is `B06`.
+   * *Example 2:* If you soldered to `TX2` and the CLI shows `resource SERIAL_TX 2 A02`, your pin is `A02`.
+5. **Note down your `<PIN_NAME>` and `<UART_NUMBER>`**.
 
-3. Remap the pin to `PINIO 1` by executing:
-   ```text
-   resource SERIAL_TX 1 NONE
-   resource PINIO 1 B06
-   set pinio_config = 1,129,129,129
-   set pinio_box = 40,255,255,255
-   save
-   ```
+### Step 3: Reassign the Pin as a Switchable GPIO (PINIO)
+In the CLI, execute the following commands (replace `<UART_NUMBER>` and `<PIN_NAME>` with your values from Step 2):
 
-4. Go to the **Modes** tab in Betaflight Configurator:
-   - Find the **USER1** mode.
-   - Click **Add Range** and assign it to your desired **AUX** switch.
-   - Set the active range so that flipping the switch activates `USER1` (outputs 3.3V on TX1) to start recording, and deactivates it (0V on TX1) to stop and save the WAV file.
+```text
+resource SERIAL_TX <UART_NUMBER> NONE
+resource PINIO 1 <PIN_NAME>
+set pinio_config = 1,129,129,129
+set pinio_box = 40,255,255,255
+save
+```
+*(The flight controller will save and reboot automatically).*
+
+### Step 4: Map to an AUX Switch on Your Radio
+1. Reconnect to Betaflight Configurator and open the **Modes** tab.
+2. Locate the new **USER1** mode box in the list.
+3. Click **Add Range** and choose your desired **AUX channel** corresponding to the switch on your radio transmitter.
+4. Adjust the yellow slider so that flipping the switch to the active position activates `USER1` (the FC will output a steady 3.3V on the TX pad to trigger recording), and flipping it back deactivates it (0V on the TX pad to safely finalize and save the WAV file).
+5. Click **Save** in the bottom right corner.
 
 ---
 
