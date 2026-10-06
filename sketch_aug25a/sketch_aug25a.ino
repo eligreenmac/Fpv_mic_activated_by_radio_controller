@@ -73,10 +73,11 @@ volatile uint16_t ringBuffer[RING_BUFFER_SIZE];
 volatile int ringHead = 0;
 volatile int ringTail = 0;
 
-esp_timer_handle_t sampleTimer;
+esp_timer_handle_t sampleTimer = NULL;
+bool timerRunning = false;
 WebServer server(80);
 
-// Hardware Timer Callback (Runs at 16kHz in the background)
+// Hardware Timer Callback (Runs at 16kHz ONLY while recording)
 void IRAM_ATTR onSampleTimer(void* arg) {
   if (!isRecording) return;
 
@@ -145,14 +146,22 @@ int getNextFileCounter() {
 
 // Start Wi-Fi Access Point and Web Server
 void startWiFiAP() {
-  Serial.println("Starting Wi-Fi Access Point: " AP_SSID "...");
+  Serial.print("Configuring Wi-Fi AP '");
+  Serial.print(AP_SSID);
+  Serial.println("'...");
 
+  WiFi.disconnect(true);
+  delay(100);
   WiFi.mode(WIFI_AP);
-  WiFi.softAP(AP_SSID, AP_PASS);
+  bool apStarted = WiFi.softAP(AP_SSID, AP_PASS);
 
-  IPAddress IP = WiFi.softAPIP();
-  Serial.print("Wi-Fi AP Ready! IP address: ");
-  Serial.println(IP);
+  if (apStarted) {
+    IPAddress IP = WiFi.softAPIP();
+    Serial.print("SUCCESS: Wi-Fi AP is Broadcasting! Connect and browse to: http://");
+    Serial.println(IP);
+  } else {
+    Serial.println("ERROR: Failed to start Wi-Fi SoftAP!");
+  }
 
   server.begin();
 }
@@ -310,12 +319,25 @@ void startRecording() {
   dataSize = 0;
   writeWavHeader(audioFile, dataSize);
   isRecording = true;
+
+  // Start 16kHz hardware sampling timer ONLY when recording starts
+  if (sampleTimer && !timerRunning) {
+    esp_timer_start_periodic(sampleTimer, 1000000 / SAMPLE_RATE);
+    timerRunning = true;
+  }
+
   Serial.println("Started recording to: " + filename);
 }
 
 void stopRecording() {
   if (!isRecording) return;
   isRecording = false;
+
+  // Stop sampling timer immediately to free CPU
+  if (sampleTimer && timerRunning) {
+    esp_timer_stop(sampleTimer);
+    timerRunning = false;
+  }
 
   // Flush remaining ring buffer samples
   int available = (ringHead - ringTail + RING_BUFFER_SIZE) % RING_BUFFER_SIZE;
@@ -369,30 +391,32 @@ void recordAudioStep() {
 
 void setup() {
   Serial.begin(115200);
-  delay(1000);
+  delay(1500); // Give USB Serial time to connect
 
-  Serial.println("\n--- FPV Voice Recorder Starting ---");
+  Serial.println("\n==========================================");
+  Serial.println("   FPV Voice Recorder + Wi-Fi Server      ");
+  Serial.println("==========================================");
 
-  // 1. Start Wi-Fi Access Point immediately on boot
-  startWiFiAP();
-
-  // 2. Setup Web Server routes
+  // 1. Setup Web Server routes
   server.on("/", handleRoot);
   server.on("/download", handleDownload);
   server.on("/stream", handleStream);
   server.on("/delete", handleDelete);
 
-  // Setup ADC resolution (12-bit)
+  // 2. Start Wi-Fi Access Point immediately on boot
+  startWiFiAP();
+
+  // 3. Setup ADC resolution (12-bit)
   analogReadResolution(12);
   pinMode(MIC_ADC_PIN, INPUT);
 
-  // Initialize DSP Filter
+  // 4. Initialize DSP Filter
   bpFilter.init(150.0f, 3400.0f, (float)SAMPLE_RATE);
 
-  // Setup trigger pin with pull-down
+  // 5. Setup trigger pin with pull-down
   pinMode(TRIGGER_PIN, INPUT_PULLDOWN);
 
-  // 3. Initialize SD Card
+  // 6. Initialize SD Card
   SPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI, SD_CS);
   for (int retry = 0; retry < 3; retry++) {
     if (SD.begin(SD_CS, SPI, 40000000) || SD.begin(SD_CS)) {
@@ -403,13 +427,13 @@ void setup() {
   }
 
   if (sdMounted) {
-    Serial.println("SD Card mounted successfully.");
+    Serial.println("MicroSD Card: MOUNTED OK");
     fileCounter = getNextFileCounter();
   } else {
-    Serial.println("Warning: SD Card Mount Failed! Check card insertion.");
+    Serial.println("MicroSD Card: NOT DETECTED (Check insertion)");
   }
 
-  // 4. Start hardware sampling timer (16kHz)
+  // 7. Create hardware sampling timer (do NOT start yet, only start during recording)
   const esp_timer_create_args_t timerArgs = {
     .callback = &onSampleTimer,
     .arg = NULL,
@@ -418,16 +442,21 @@ void setup() {
     .skip_unhandled_events = true
   };
   esp_timer_create(&timerArgs, &sampleTimer);
-  esp_timer_start_periodic(sampleTimer, 1000000 / SAMPLE_RATE);
 
-  Serial.print("System Ready. Next file counter: ");
-  Serial.println(fileCounter);
-  Serial.println("Wi-Fi SSID: " AP_SSID " (Password: " AP_PASS ")");
-  Serial.println("Web Interface: http://192.168.4.1");
+  Serial.println("------------------------------------------");
+  Serial.print("Next Recording File: /rec_");
+  Serial.print(fileCounter);
+  Serial.println(".wav");
+  Serial.print("Wi-Fi Network Name: ");
+  Serial.println(AP_SSID);
+  Serial.print("Wi-Fi Password:     ");
+  Serial.println(AP_PASS);
+  Serial.println("Web Address:        http://192.168.4.1");
+  Serial.println("==========================================\n");
 }
 
 void loop() {
-  // Allow 3 seconds boot stabilization
+  // Allow 3 seconds boot stabilization before listening to trigger
   if (millis() > 3000) {
     bool triggerState = (digitalRead(TRIGGER_PIN) == HIGH);
 
@@ -452,7 +481,7 @@ void loop() {
     recordAudioStep();
   }
 
-  // Always handle web clients
+  // Handle web server clients
   server.handleClient();
   delay(2);
 }
