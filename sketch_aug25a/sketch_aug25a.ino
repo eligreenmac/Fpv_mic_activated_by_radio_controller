@@ -7,7 +7,11 @@
 
 // --- Wi-Fi Access Point Configuration ---
 #define AP_SSID          "FPV-Audio-Recorder"
-#define AP_PASS          "12345678" // Password (minimum 8 chars)
+#define AP_PASS          ""         // Open network (no password) for 100% phone discovery compatibility
+#define AP_CHANNEL       1          // Channel 1 has maximum global compatibility
+
+// --- Onboard LED (ESP32-C3 SuperMini) ---
+#define LED_PIN          8          // Built-in Blue LED for status/heartbeat
 
 // --- SD Card Pin Configuration ---
 #define SD_CS            7
@@ -144,21 +148,34 @@ int getNextFileCounter() {
   return counter;
 }
 
-// Start Wi-Fi Access Point and Web Server
+// Start Wi-Fi Access Point on Channel 1 with Safe 8.5dBm TX Power
 void startWiFiAP() {
-  Serial.print("Configuring Wi-Fi AP '");
-  Serial.print(AP_SSID);
-  Serial.println("'...");
+  Serial.println("Configuring Wi-Fi AP...");
 
+  WiFi.persistent(false);
   WiFi.disconnect(true);
   delay(100);
   WiFi.mode(WIFI_AP);
-  bool apStarted = WiFi.softAP(AP_SSID, AP_PASS);
+
+  // Lower TX power prevents RF reflection and brownouts on ESP32-C3 SuperMini
+  WiFi.setTxPower(WIFI_POWER_8_5dBm);
+
+  IPAddress local_IP(192, 168, 4, 1);
+  IPAddress gateway(192, 168, 4, 1);
+  IPAddress subnet(255, 255, 255, 0);
+  WiFi.softAPConfig(local_IP, gateway, subnet);
+
+  // Open network (no password) on Channel 1 for 100% phone discovery compatibility
+  bool apStarted = WiFi.softAP(AP_SSID, NULL, 1);
 
   if (apStarted) {
-    IPAddress IP = WiFi.softAPIP();
-    Serial.print("SUCCESS: Wi-Fi AP is Broadcasting! Connect and browse to: http://");
-    Serial.println(IP);
+    Serial.println("SUCCESS: Wi-Fi AP is Broadcasting!");
+    Serial.print("SSID: ");
+    Serial.println(AP_SSID);
+    Serial.print("AP MAC Address: ");
+    Serial.println(WiFi.softAPmacAddress());
+    Serial.print("Connect to: http://");
+    Serial.println(WiFi.softAPIP());
   } else {
     Serial.println("ERROR: Failed to start Wi-Fi SoftAP!");
   }
@@ -391,7 +408,7 @@ void recordAudioStep() {
 
 void setup() {
   Serial.begin(115200);
-  delay(1500); // Give USB Serial time to connect
+  delay(1500);
 
   Serial.println("\n==========================================");
   Serial.println("   FPV Voice Recorder + Wi-Fi Server      ");
@@ -406,7 +423,9 @@ void setup() {
   // 2. Start Wi-Fi Access Point immediately on boot
   startWiFiAP();
 
-  // 3. Setup ADC resolution (12-bit)
+  // 3. Setup Status LED & ADC resolution (12-bit)
+  pinMode(LED_PIN, OUTPUT);
+  digitalWrite(LED_PIN, LOW);
   analogReadResolution(12);
   pinMode(MIC_ADC_PIN, INPUT);
 
@@ -433,7 +452,7 @@ void setup() {
     Serial.println("MicroSD Card: NOT DETECTED (Check insertion)");
   }
 
-  // 7. Create hardware sampling timer (do NOT start yet, only start during recording)
+  // 7. Create hardware sampling timer (only start during recording)
   const esp_timer_create_args_t timerArgs = {
     .callback = &onSampleTimer,
     .arg = NULL,
@@ -449,13 +468,22 @@ void setup() {
   Serial.println(".wav");
   Serial.print("Wi-Fi Network Name: ");
   Serial.println(AP_SSID);
-  Serial.print("Wi-Fi Password:     ");
-  Serial.println(AP_PASS);
+  Serial.println("Wi-Fi Security:     OPEN (No Password)");
   Serial.println("Web Address:        http://192.168.4.1");
   Serial.println("==========================================\n");
 }
 
 void loop() {
+  // Visual heartbeat LED (Blinks slow when idle, fast when recording)
+  static uint32_t lastBlinkTime = 0;
+  static bool ledState = false;
+  uint32_t blinkInterval = isRecording ? 100 : 600; // 100ms on REC, 600ms on STANDBY
+  if (millis() - lastBlinkTime >= blinkInterval) {
+    lastBlinkTime = millis();
+    ledState = !ledState;
+    digitalWrite(LED_PIN, ledState ? HIGH : LOW);
+  }
+
   // Allow 3 seconds boot stabilization before listening to trigger
   if (millis() > 3000) {
     bool triggerState = (digitalRead(TRIGGER_PIN) == HIGH);
