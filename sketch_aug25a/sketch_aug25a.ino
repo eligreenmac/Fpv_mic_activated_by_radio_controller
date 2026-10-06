@@ -7,7 +7,7 @@
 
 // --- Wi-Fi Access Point Configuration ---
 #define AP_SSID          "FPV-Audio-Recorder"
-#define AP_PASS          "12345678" // Minimum 8 characters, or set to "" for open network
+#define AP_PASS          "12345678" // Minimum 8 characters, or "" for open network
 
 // --- SD Card Pin Configuration ---
 #define SD_CS            7
@@ -63,6 +63,7 @@ public:
 
 File audioFile;
 volatile bool isRecording = false;
+bool sdMounted = false;
 uint32_t dataSize = 0;
 int fileCounter = 1;
 BandPassFilter bpFilter;
@@ -131,6 +132,7 @@ void writeWavHeader(File &file, uint32_t data_size) {
 }
 
 int getNextFileCounter() {
+  if (!sdMounted) return 1;
   int counter = 1;
   while (true) {
     String filename = "/rec_" + String(counter) + ".wav";
@@ -142,19 +144,31 @@ int getNextFileCounter() {
   return counter;
 }
 
-// Start Wi-Fi Access Point and Web Server
+// Start Wi-Fi Access Point and Web Server with robust IP configuration
 void startWiFiAP() {
   if (wifiActive) return;
   Serial.println("Starting Wi-Fi Access Point: " AP_SSID "...");
+
+  WiFi.disconnect(true);
+  delay(50);
   WiFi.mode(WIFI_AP);
+
+  IPAddress local_ip(192, 168, 4, 1);
+  IPAddress gateway(192, 168, 4, 1);
+  IPAddress subnet(255, 255, 255, 0);
+  WiFi.softAPConfig(local_ip, gateway, subnet);
+
   if (strlen(AP_PASS) >= 8) {
-    WiFi.softAP(AP_SSID, AP_PASS);
+    WiFi.softAP(AP_SSID, AP_PASS, 1, 0, 4);
   } else {
-    WiFi.softAP(AP_SSID);
+    WiFi.softAP(AP_SSID, NULL, 1, 0, 4);
   }
+
+  WiFi.setTxPower(WIFI_POWER_19_5dBm);
   IPAddress IP = WiFi.softAPIP();
-  Serial.print("Wi-Fi AP Ready! Connect and browse to http://");
+  Serial.print("Wi-Fi AP Active! Connect and visit http://");
   Serial.println(IP);
+
   server.begin();
   wifiActive = true;
 }
@@ -190,39 +204,46 @@ void handleRoot() {
 
   html += "<div class='card'>";
   html += "<h1>🎙️ FPV Audio Recorder</h1>";
-  html += "<div class='status'>Connected to ESP32-C3 Storage<br>IP: 192.168.4.1</div>";
-  html += "</div>";
+  html += "<div class='status'>Connected to ESP32-C3 Storage | IP: 192.168.4.1<br>";
+  if (sdMounted) {
+    html += "<span style='color:#4caf50;'>● MicroSD Card Ready</span>";
+  } else {
+    html += "<span style='color:#f44336;'>● MicroSD Card Mount Failed</span>";
+  }
+  html += "</div></div>";
 
   html += "<div class='card'>";
   html += "<h2>📁 Recorded Audio Files</h2>";
 
-  File root = SD.open("/");
   int count = 0;
-  if (root) {
-    File file = root.openNextFile();
-    while (file) {
-      String name = String(file.name());
-      if (!file.isDirectory() && name.endsWith(".wav")) {
-        count++;
-        size_t sizeBytes = file.size();
-        float sizeMB = sizeBytes / (1024.0 * 1024.0);
-        int durationSec = sizeBytes / (SAMPLE_RATE * 2); // 16-bit mono = 32KB/sec
-        int mins = durationSec / 60;
-        int secs = durationSec % 60;
+  if (sdMounted) {
+    File root = SD.open("/");
+    if (root) {
+      File file = root.openNextFile();
+      while (file) {
+        String name = String(file.name());
+        if (!file.isDirectory() && name.endsWith(".wav")) {
+          count++;
+          size_t sizeBytes = file.size();
+          float sizeMB = sizeBytes / (1024.0 * 1024.0);
+          int durationSec = sizeBytes / (SAMPLE_RATE * 2);
+          int mins = durationSec / 60;
+          int secs = durationSec % 60;
 
-        html += "<div class='file-item'>";
-        html += "<div class='file-info'><span>" + name + "</span><span>" + String(sizeMB, 2) + " MB</span></div>";
-        html += "<div class='file-meta'>Duration: ~" + String(mins) + "m " + (secs < 10 ? "0" : "") + String(secs) + "s</div>";
-        html += "<audio controls preload='none' src='/stream?file=" + name + "'></audio>";
-        html += "<div class='actions'>";
-        html += "<a class='btn btn-download' href='/download?file=" + name + "'>📥 Download</a>";
-        html += "<a class='btn btn-delete' href='/delete?file=" + name + "' onclick=\"return confirm('Delete " + name + "?')\">🗑️ Delete</a>";
-        html += "</div>";
-        html += "</div>";
+          html += "<div class='file-item'>";
+          html += "<div class='file-info'><span>" + name + "</span><span>" + String(sizeMB, 2) + " MB</span></div>";
+          html += "<div class='file-meta'>Duration: ~" + String(mins) + "m " + (secs < 10 ? "0" : "") + String(secs) + "s</div>";
+          html += "<audio controls preload='none' src='/stream?file=" + name + "'></audio>";
+          html += "<div class='actions'>";
+          html += "<a class='btn btn-download' href='/download?file=" + name + "'>📥 Download</a>";
+          html += "<a class='btn btn-delete' href='/delete?file=" + name + "' onclick=\"return confirm('Delete " + name + "?')\">🗑️ Delete</a>";
+          html += "</div>";
+          html += "</div>";
+        }
+        file = root.openNextFile();
       }
-      file = root.openNextFile();
+      root.close();
     }
-    root.close();
   }
 
   if (count == 0) {
@@ -236,10 +257,10 @@ void handleRoot() {
   server.send(200, "text/html", html);
 }
 
-// Download WAV file (forces browser download attachment)
+// Download WAV file
 void handleDownload() {
-  if (!server.hasArg("file")) {
-    server.send(400, "text/plain", "Missing file parameter");
+  if (!sdMounted || !server.hasArg("file")) {
+    server.send(400, "text/plain", "Missing file parameter or SD unmounted");
     return;
   }
   String filename = server.arg("file");
@@ -259,10 +280,10 @@ void handleDownload() {
   downloadFile.close();
 }
 
-// Stream audio for direct in-browser playback
+// Stream audio for in-browser playback
 void handleStream() {
-  if (!server.hasArg("file")) {
-    server.send(400, "text/plain", "Missing file parameter");
+  if (!sdMounted || !server.hasArg("file")) {
+    server.send(400, "text/plain", "Missing file parameter or SD unmounted");
     return;
   }
   String filename = server.arg("file");
@@ -283,24 +304,26 @@ void handleStream() {
 
 // Delete file from SD card
 void handleDelete() {
-  if (!server.hasArg("file")) {
-    server.send(400, "text/plain", "Missing file parameter");
-    return;
-  }
-  String filename = server.arg("file");
-  if (!filename.startsWith("/")) filename = "/" + filename;
-
-  if (SD.exists(filename)) {
-    SD.remove(filename);
-    Serial.println("Deleted: " + filename);
+  if (sdMounted && server.hasArg("file")) {
+    String filename = server.arg("file");
+    if (!filename.startsWith("/")) filename = "/" + filename;
+    if (SD.exists(filename)) {
+      SD.remove(filename);
+      Serial.println("Deleted: " + filename);
+    }
   }
   server.sendHeader("Location", "/");
   server.send(303);
 }
 
 void startRecording() {
-  // Disable Wi-Fi to eliminate RF interference during flight
+  // Disable Wi-Fi during flight
   stopWiFiAP();
+
+  if (!sdMounted) {
+    Serial.println("Cannot record: MicroSD card is not mounted!");
+    return;
+  }
 
   ringHead = 0;
   ringTail = 0;
@@ -318,6 +341,7 @@ void startRecording() {
 }
 
 void stopRecording() {
+  if (!isRecording) return;
   isRecording = false;
 
   // Flush remaining ring buffer samples
@@ -334,11 +358,13 @@ void stopRecording() {
     dataSize += available * sizeof(int16_t);
   }
 
-  writeWavHeader(audioFile, dataSize);
-  audioFile.close();
-  Serial.print("Stopped recording. File saved. Total size: ");
-  Serial.print(dataSize);
-  Serial.println(" bytes.");
+  if (audioFile) {
+    writeWavHeader(audioFile, dataSize);
+    audioFile.close();
+    Serial.print("Stopped recording. File saved. Total size: ");
+    Serial.print(dataSize);
+    Serial.println(" bytes.");
+  }
 
   // Re-enable Wi-Fi AP for ground file access
   startWiFiAP();
@@ -377,33 +403,41 @@ void setup() {
 
   Serial.println("Initializing FPV Voice Recorder with Wi-Fi Storage Server...");
 
+  // Setup ADC resolution (12-bit)
   analogReadResolution(12);
   pinMode(MIC_ADC_PIN, INPUT);
 
+  // Initialize DSP Filter
   bpFilter.init(150.0f, 3400.0f, (float)SAMPLE_RATE);
+
+  // Setup trigger pin with pull-down
   pinMode(TRIGGER_PIN, INPUT_PULLDOWN);
 
-  SPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI, SD_CS);
-  if (!SD.begin(SD_CS, SPI, 40000000)) {
-    if (!SD.begin(SD_CS)) {
-      Serial.println("Error: SD Card Mount Failed! Check connections.");
-      return;
-    }
-  }
-  Serial.println("SD Card mounted successfully.");
-
-  fileCounter = getNextFileCounter();
-
-  // Setup Web Server routes
+  // 1. Setup Web Server routes & Start Wi-Fi FIRST (Always active even if SD has delay)
   server.on("/", handleRoot);
   server.on("/download", handleDownload);
   server.on("/stream", handleStream);
   server.on("/delete", handleDelete);
-
-  // Start Wi-Fi Access Point on boot
   startWiFiAP();
 
-  // Create lightweight hardware timer for continuous 16kHz background sampling
+  // 2. Initialize SD Card with retries
+  SPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI, SD_CS);
+  for (int retry = 0; retry < 3; retry++) {
+    if (SD.begin(SD_CS, SPI, 40000000) || SD.begin(SD_CS)) {
+      sdMounted = true;
+      break;
+    }
+    delay(200);
+  }
+
+  if (sdMounted) {
+    Serial.println("SD Card mounted successfully.");
+    fileCounter = getNextFileCounter();
+  } else {
+    Serial.println("Warning: SD Card Mount Failed! Check card insertion.");
+  }
+
+  // 3. Start hardware sampling timer (16kHz)
   const esp_timer_create_args_t timerArgs = {
     .callback = &onSampleTimer,
     .arg = NULL,
@@ -416,28 +450,36 @@ void setup() {
 
   Serial.print("System Ready. Next file counter: ");
   Serial.println(fileCounter);
-  Serial.println("Waiting for high voltage on Pin 10 (TX) to record...");
+  Serial.println("Wi-Fi AP is active. Waiting for TX trigger on Pin 10...");
 }
 
 void loop() {
+  // Allow 2.5 seconds boot stabilization before accepting trigger signals
+  // (Prevents FC bootloader glitches from falsely killing Wi-Fi on power-up)
+  if (millis() < 2500) {
+    if (wifiActive) server.handleClient();
+    delay(5);
+    return;
+  }
+
   bool triggerState = (digitalRead(TRIGGER_PIN) == HIGH);
 
   // Start Recording
   if (triggerState && !isRecording) {
-    delay(50); // Debounce
+    delay(100); // 100ms debounce
     if (digitalRead(TRIGGER_PIN) == HIGH) {
       startRecording();
     }
   }
   // Stop Recording
   else if (!triggerState && isRecording) {
-    delay(50); // Debounce
+    delay(100); // 100ms debounce
     if (digitalRead(TRIGGER_PIN) == LOW) {
       stopRecording();
     }
   }
 
-  // Handle Recording Stream OR Web Server
+  // Stream audio while recording OR handle Web Server clients while idle
   if (isRecording) {
     recordAudioStep();
   } else {
