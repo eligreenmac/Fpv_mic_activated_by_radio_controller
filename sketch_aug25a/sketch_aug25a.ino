@@ -7,7 +7,7 @@
 
 // --- Wi-Fi Access Point Configuration ---
 #define AP_SSID          "FPV-Audio-Recorder"
-#define AP_PASS          "12345678" // Minimum 8 characters, or "" for open network
+#define AP_PASS          "12345678" // Password (minimum 8 chars)
 
 // --- SD Card Pin Configuration ---
 #define SD_CS            7
@@ -75,7 +75,6 @@ volatile int ringTail = 0;
 
 esp_timer_handle_t sampleTimer;
 WebServer server(80);
-bool wifiActive = false;
 
 // Hardware Timer Callback (Runs at 16kHz in the background)
 void IRAM_ATTR onSampleTimer(void* arg) {
@@ -144,43 +143,18 @@ int getNextFileCounter() {
   return counter;
 }
 
-// Start Wi-Fi Access Point and Web Server with robust IP configuration
+// Start Wi-Fi Access Point and Web Server
 void startWiFiAP() {
-  if (wifiActive) return;
   Serial.println("Starting Wi-Fi Access Point: " AP_SSID "...");
 
-  WiFi.disconnect(true);
-  delay(50);
   WiFi.mode(WIFI_AP);
+  WiFi.softAP(AP_SSID, AP_PASS);
 
-  IPAddress local_ip(192, 168, 4, 1);
-  IPAddress gateway(192, 168, 4, 1);
-  IPAddress subnet(255, 255, 255, 0);
-  WiFi.softAPConfig(local_ip, gateway, subnet);
-
-  if (strlen(AP_PASS) >= 8) {
-    WiFi.softAP(AP_SSID, AP_PASS, 1, 0, 4);
-  } else {
-    WiFi.softAP(AP_SSID, NULL, 1, 0, 4);
-  }
-
-  WiFi.setTxPower(WIFI_POWER_19_5dBm);
   IPAddress IP = WiFi.softAPIP();
-  Serial.print("Wi-Fi AP Active! Connect and visit http://");
+  Serial.print("Wi-Fi AP Ready! IP address: ");
   Serial.println(IP);
 
   server.begin();
-  wifiActive = true;
-}
-
-// Stop Wi-Fi completely during flight to eliminate RF interference
-void stopWiFiAP() {
-  if (!wifiActive) return;
-  Serial.println("Disabling Wi-Fi for flight recording (Zero RF Interference)...");
-  server.stop();
-  WiFi.softAPdisconnect(true);
-  WiFi.mode(WIFI_OFF);
-  wifiActive = false;
 }
 
 // HTML Web Interface
@@ -190,7 +164,10 @@ void handleRoot() {
   html += "body{font-family:system-ui,-apple-system,sans-serif;background:#121212;color:#e0e0e0;padding:15px;margin:0;}";
   html += ".card{background:#1e1e1e;border-radius:12px;padding:16px;margin-bottom:16px;box-shadow:0 4px 12px rgba(0,0,0,0.5);}";
   html += "h1{font-size:22px;margin:0 0 10px;color:#4caf50;display:flex;align-items:center;gap:8px;}";
-  html += ".status{font-size:14px;color:#aaa;margin-bottom:15px;}";
+  html += ".status{font-size:14px;color:#aaa;margin-bottom:15px;line-height:1.6;}";
+  html += ".badge{display:inline-block;padding:4px 8px;border-radius:4px;font-weight:bold;font-size:12px;}";
+  html += ".badge-rec{background:#f44336;color:#fff;}";
+  html += ".badge-idle{background:#4caf50;color:#fff;}";
   html += ".file-item{display:flex;flex-direction:column;gap:8px;padding:12px;background:#2a2a2a;border-radius:8px;margin-bottom:10px;}";
   html += ".file-info{display:flex;justify-content:space-between;font-weight:600;font-size:16px;color:#fff;}";
   html += ".file-meta{font-size:13px;color:#888;}";
@@ -204,12 +181,9 @@ void handleRoot() {
 
   html += "<div class='card'>";
   html += "<h1>🎙️ FPV Audio Recorder</h1>";
-  html += "<div class='status'>Connected to ESP32-C3 Storage | IP: 192.168.4.1<br>";
-  if (sdMounted) {
-    html += "<span style='color:#4caf50;'>● MicroSD Card Ready</span>";
-  } else {
-    html += "<span style='color:#f44336;'>● MicroSD Card Mount Failed</span>";
-  }
+  html += "<div class='status'>";
+  html += "Status: " + String(isRecording ? "<span class='badge badge-rec'>● RECORDING ACTIVE</span>" : "<span class='badge badge-idle'>● STANDBY</span>") + "<br>";
+  html += "Storage: " + String(sdMounted ? "<span style='color:#4caf50;'>MicroSD Ready</span>" : "<span style='color:#f44336;'>MicroSD Mount Failed</span>");
   html += "</div></div>";
 
   html += "<div class='card'>";
@@ -317,8 +291,7 @@ void handleDelete() {
 }
 
 void startRecording() {
-  // Disable Wi-Fi during flight
-  stopWiFiAP();
+  if (isRecording) return;
 
   if (!sdMounted) {
     Serial.println("Cannot record: MicroSD card is not mounted!");
@@ -365,9 +338,6 @@ void stopRecording() {
     Serial.print(dataSize);
     Serial.println(" bytes.");
   }
-
-  // Re-enable Wi-Fi AP for ground file access
-  startWiFiAP();
 }
 
 void recordAudioStep() {
@@ -401,7 +371,16 @@ void setup() {
   Serial.begin(115200);
   delay(1000);
 
-  Serial.println("Initializing FPV Voice Recorder with Wi-Fi Storage Server...");
+  Serial.println("\n--- FPV Voice Recorder Starting ---");
+
+  // 1. Start Wi-Fi Access Point immediately on boot
+  startWiFiAP();
+
+  // 2. Setup Web Server routes
+  server.on("/", handleRoot);
+  server.on("/download", handleDownload);
+  server.on("/stream", handleStream);
+  server.on("/delete", handleDelete);
 
   // Setup ADC resolution (12-bit)
   analogReadResolution(12);
@@ -413,21 +392,14 @@ void setup() {
   // Setup trigger pin with pull-down
   pinMode(TRIGGER_PIN, INPUT_PULLDOWN);
 
-  // 1. Setup Web Server routes & Start Wi-Fi FIRST (Always active even if SD has delay)
-  server.on("/", handleRoot);
-  server.on("/download", handleDownload);
-  server.on("/stream", handleStream);
-  server.on("/delete", handleDelete);
-  startWiFiAP();
-
-  // 2. Initialize SD Card with retries
+  // 3. Initialize SD Card
   SPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI, SD_CS);
   for (int retry = 0; retry < 3; retry++) {
     if (SD.begin(SD_CS, SPI, 40000000) || SD.begin(SD_CS)) {
       sdMounted = true;
       break;
     }
-    delay(200);
+    delay(150);
   }
 
   if (sdMounted) {
@@ -437,7 +409,7 @@ void setup() {
     Serial.println("Warning: SD Card Mount Failed! Check card insertion.");
   }
 
-  // 3. Start hardware sampling timer (16kHz)
+  // 4. Start hardware sampling timer (16kHz)
   const esp_timer_create_args_t timerArgs = {
     .callback = &onSampleTimer,
     .arg = NULL,
@@ -450,42 +422,37 @@ void setup() {
 
   Serial.print("System Ready. Next file counter: ");
   Serial.println(fileCounter);
-  Serial.println("Wi-Fi AP is active. Waiting for TX trigger on Pin 10...");
+  Serial.println("Wi-Fi SSID: " AP_SSID " (Password: " AP_PASS ")");
+  Serial.println("Web Interface: http://192.168.4.1");
 }
 
 void loop() {
-  // Allow 2.5 seconds boot stabilization before accepting trigger signals
-  // (Prevents FC bootloader glitches from falsely killing Wi-Fi on power-up)
-  if (millis() < 2500) {
-    if (wifiActive) server.handleClient();
-    delay(5);
-    return;
-  }
+  // Allow 3 seconds boot stabilization
+  if (millis() > 3000) {
+    bool triggerState = (digitalRead(TRIGGER_PIN) == HIGH);
 
-  bool triggerState = (digitalRead(TRIGGER_PIN) == HIGH);
-
-  // Start Recording
-  if (triggerState && !isRecording) {
-    delay(100); // 100ms debounce
-    if (digitalRead(TRIGGER_PIN) == HIGH) {
-      startRecording();
+    // Start Recording
+    if (triggerState && !isRecording) {
+      delay(50);
+      if (digitalRead(TRIGGER_PIN) == HIGH) {
+        startRecording();
+      }
     }
-  }
-  // Stop Recording
-  else if (!triggerState && isRecording) {
-    delay(100); // 100ms debounce
-    if (digitalRead(TRIGGER_PIN) == LOW) {
-      stopRecording();
+    // Stop Recording
+    else if (!triggerState && isRecording) {
+      delay(50);
+      if (digitalRead(TRIGGER_PIN) == LOW) {
+        stopRecording();
+      }
     }
   }
 
-  // Stream audio while recording OR handle Web Server clients while idle
+  // Stream audio while recording
   if (isRecording) {
     recordAudioStep();
-  } else {
-    if (wifiActive) {
-      server.handleClient();
-    }
-    delay(2);
   }
+
+  // Always handle web clients
+  server.handleClient();
+  delay(2);
 }
